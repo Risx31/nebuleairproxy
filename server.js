@@ -39,3 +39,66 @@ app.get("/", (req, res) => {
 });
 
 app.listen(10000, () => console.log("Proxy running on port 10000"));
+
+// =======================================================
+//        SNAKE – API CLASSEMENT GLOBAL
+// =======================================================
+
+const MAX_ENTRIES = 10;
+const snakeLeaderboards = {
+  lent: [],
+  normal: [],
+  rapide: []
+};
+
+function sanitizeMode(mode) {
+  if (mode === "lent" || mode === "normal" || mode === "rapide") return mode;
+  return "normal";
+}
+
+function addSnakeScore(mode, name, score) {
+  mode = sanitizeMode(mode);
+  const cleanName = (name || "Anonyme").toString().slice(0, 20);
+  const numericScore = Number(score) || 0;
+
+  snakeLeaderboards[mode].push({
+    name: cleanName,
+    score: numericScore,
+    date: new Date().toISOString()
+  });
+
+  snakeLeaderboards[mode].sort((a, b) => b.score - a.score);
+  snakeLeaderboards[mode] = snakeLeaderboards[mode].slice(0, MAX_ENTRIES);
+}
+
+// GET → récupère tous les classements
+app.get("/snake/leaderboard", (req, res) => {
+  res.json(snakeLeaderboards);
+});
+
+// POST → ajoute un score { mode, name, score }
+app.post("/snake/leaderboard", (req, res) => {
+  const { mode, name, score } = req.body || {};
+
+  if (score === undefined) {
+    return res.status(400).json({ error: "Missing score" });
+  }
+
+  addSnakeScore(mode, name, score);
+  res.json({
+    ok: true,
+    mode: sanitizeMode(mode),
+    leaderboard: snakeLeaderboards[sanitizeMode(mode)]
+  });
+});
+
+// Route racine
+app.get("/", (req, res) => {
+  res.send("NebuleAir Proxy + NebuleSnake Leaderboard 🐍");
+});
+
+// Lancement du serveur
+app.listen(PORT, () => {
+  console.log(`Server listening on port ${PORT}`);
+});
+
