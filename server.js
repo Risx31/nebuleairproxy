@@ -8,18 +8,23 @@ const app = express();
 // =======================================================
 //  MIDDLEWARES GLOBAUX
 // =======================================================
+
+// CORS partout
 app.use(cors());
-app.use(express.json()); // pour les requêtes JSON (Snake leaderboard)
+
+// Parser JSON par défaut (pour le Snake)
+app.use(express.json());
 
 // =======================================================
-//  CONFIG INFLUXDB – PROXY /query
+//  INFLUXDB – PROXY /query
 // =======================================================
+
 const INFLUX_URL =
   "https://eu-central-1-1.aws.cloud2.influxdata.com/api/v2/query";
 const INFLUX_TOKEN = process.env.INFLUX_TOKEN; // 🔐 stocké côté Render
-const ORG = "4ec803aa73783a39"; // gardé si besoin plus tard
+const ORG = "4ec803aa73783a39"; // pas utilisé mais tu peux le garder
 
-// Proxy vers Influx : on a besoin du corps brut → middleware express.text
+// ⚠️ Pour /query on veut le body brut (Flux), donc on ajoute express.text
 app.post("/query", express.text({ type: "*/*" }), async (req, res) => {
   try {
     const influxResponse = await fetch(INFLUX_URL, {
@@ -30,7 +35,7 @@ app.post("/query", express.text({ type: "*/*" }), async (req, res) => {
         Accept: "application/csv",
         "Accept-Encoding": "identity"
       },
-      body: req.body // texte brut flux
+      body: req.body
     });
 
     const csv = await influxResponse.text();
@@ -38,7 +43,7 @@ app.post("/query", express.text({ type: "*/*" }), async (req, res) => {
     res.set("Content-Type", "text/plain");
     res.send(csv);
   } catch (err) {
-    console.error(err);
+    console.error("[Proxy] Erreur Influx :", err);
     res.status(500).send("Erreur proxy");
   }
 });
@@ -101,6 +106,7 @@ app.post("/snake/leaderboard", (req, res) => {
 // =======================================================
 //  ROUTE RACINE & LANCEMENT
 // =======================================================
+
 app.get("/", (req, res) => {
   res.send("NebuleAir Proxy + NebuleSnake Leaderboard 🐍🚀");
 });
