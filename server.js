@@ -1,27 +1,29 @@
 // server.js
+// Proxy InfluxDB + API NebuleSnake (classement global)
+
 import express from "express";
 import fetch from "node-fetch";
 import cors from "cors";
 
 const app = express();
+const PORT = process.env.PORT || 10000;
 
-// =======================================================
-//  MIDDLEWARES GLOBAUX
-// =======================================================
+// --------- Middlewares ---------
 app.use(cors());
-app.use(express.json()); // pour JSON (Snake)
 
-// =======================================================
-//  INFLUXDB – PROXY /query
-// =======================================================
+// Corps texte pour /query (Flux InfluxDB)
+app.use("/query", express.text({ type: "*/*" }));
 
+// Corps JSON pour l'API Snake
+app.use(express.json());
+
+// --------- InfluxDB proxy ---------
 const INFLUX_URL =
   "https://eu-central-1-1.aws.cloud2.influxdata.com/api/v2/query";
-const INFLUX_TOKEN = process.env.INFLUX_TOKEN; // 🔐 côté Render
-const ORG = "4ec803aa73783a39"; // gardé si besoin plus tard
+const INFLUX_TOKEN = process.env.INFLUX_TOKEN; // stocké dans Render
+const ORG = "4ec803aa73783a39";
 
-// /query : on veut le body Flux brut → express.text au niveau de la route
-app.post("/query", express.text({ type: "*/*" }), async (req, res) => {
+app.post("/query", async (req, res) => {
   try {
     const influxResponse = await fetch(INFLUX_URL, {
       method: "POST",
@@ -45,17 +47,19 @@ app.post("/query", express.text({ type: "*/*" }), async (req, res) => {
 });
 
 // =======================================================
-//        SNAKE – CLASSEMENT GLOBAL + STATS GLOBALES
+//        SNAKE – API CLASSEMENT GLOBAL
 // =======================================================
 
 const MAX_ENTRIES = 10;
 
+// Classements par mode
 const snakeLeaderboards = {
   lent: [],
   normal: [],
   rapide: []
 };
 
+// Stats globales (cumulées)
 const globalSnakeStats = {
   totalGames: 0,
   totalPlayTimeSec: 0
@@ -65,6 +69,7 @@ function sanitizeMode(mode) {
   if (mode === "lent" || mode === "normal" || mode === "rapide") return mode;
   return "normal";
 }
+
 function addSnakeScore(mode, name, score, durationSec, achievements) {
   const m = sanitizeMode(mode);
   const cleanName = (name || "Anonyme").toString().slice(0, 20);
@@ -73,7 +78,7 @@ function addSnakeScore(mode, name, score, durationSec, achievements) {
 
   const ach =
     Array.isArray(achievements) && achievements.length
-      ? achievements.slice(0, 5) // max 5 icônes
+      ? achievements.slice(0, 5)
       : [];
 
   snakeLeaderboards[m].push({
@@ -83,19 +88,6 @@ function addSnakeScore(mode, name, score, durationSec, achievements) {
     date: new Date().toISOString()
   });
 
-  // tri décroissant + top10
-  snakeLeaderboards[m].sort((a, b) => b.score - a.score);
-  snakeLeaderboards[m] = snakeLeaderboards[m].slice(0, MAX_ENTRIES);
-
-  // stats globales
-  if (Number.isFinite(dur) && dur > 0) {
-    globalSnakeStats.totalGames += 1;
-    globalSnakeStats.totalPlayTimeSec += Math.floor(dur);
-  }
-}
-
-
-  // tri décroissant + top10
   snakeLeaderboards[m].sort((a, b) => b.score - a.score);
   snakeLeaderboards[m] = snakeLeaderboards[m].slice(0, MAX_ENTRIES);
 
@@ -105,15 +97,16 @@ function addSnakeScore(mode, name, score, durationSec, achievements) {
   }
 }
 
-// GET → classements + stats globales
+// GET → récupère tous les classements + stats globales
 app.get("/snake/leaderboard", (req, res) => {
+  res.set("Access-Control-Allow-Origin", "*");
   res.json({
     leaderboards: snakeLeaderboards,
     globalStats: globalSnakeStats
   });
 });
 
-// POST → ajoute un score { mode, name, score, durationSec }
+// POST → ajoute un score { mode, name, score, durationSec, achievements }
 app.post("/snake/leaderboard", (req, res) => {
   const { mode, name, score, durationSec, achievements } = req.body || {};
 
@@ -124,6 +117,7 @@ app.post("/snake/leaderboard", (req, res) => {
   addSnakeScore(mode, name, score, durationSec, achievements);
 
   const m = sanitizeMode(mode);
+  res.set("Access-Control-Allow-Origin", "*");
   res.json({
     ok: true,
     mode: m,
@@ -132,16 +126,12 @@ app.post("/snake/leaderboard", (req, res) => {
   });
 });
 
-
-// =======================================================
-//  ROUTE RACINE & LANCEMENT
-// =======================================================
-
+// --------- Route racine ---------
 app.get("/", (req, res) => {
-  res.send("NebuleAir Proxy + NebuleSnake Leaderboard 🐍🚀");
+  res.send("NebuleAir Proxy + NebuleSnake Leaderboard 🐍");
 });
 
-const PORT = process.env.PORT || 10000;
+// --------- Lancement serveur ---------
 app.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
 });
