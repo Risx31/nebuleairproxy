@@ -1,44 +1,47 @@
+// server.js
 import express from "express";
 import fetch from "node-fetch";
 import cors from "cors";
 
 const app = express();
+
+// =======================================================
+//  MIDDLEWARES GLOBAUX
+// =======================================================
 app.use(cors());
-app.use(express.text({ type: "*/*" }));
+app.use(express.json()); // pour les requêtes JSON (Snake leaderboard)
 
-const INFLUX_URL = "https://eu-central-1-1.aws.cloud2.influxdata.com/api/v2/query";
+// =======================================================
+//  CONFIG INFLUXDB – PROXY /query
+// =======================================================
+const INFLUX_URL =
+  "https://eu-central-1-1.aws.cloud2.influxdata.com/api/v2/query";
 const INFLUX_TOKEN = process.env.INFLUX_TOKEN; // 🔐 stocké côté Render
-const ORG = "4ec803aa73783a39";
+const ORG = "4ec803aa73783a39"; // gardé si besoin plus tard
 
-app.post("/query", async (req, res) => {
+// Proxy vers Influx : on a besoin du corps brut → middleware express.text
+app.post("/query", express.text({ type: "*/*" }), async (req, res) => {
   try {
     const influxResponse = await fetch(INFLUX_URL, {
       method: "POST",
       headers: {
-        "Authorization": `Token ${INFLUX_TOKEN}`,
+        Authorization: `Token ${INFLUX_TOKEN}`,
         "Content-Type": "application/vnd.flux",
-        "Accept": "application/csv",
+        Accept: "application/csv",
         "Accept-Encoding": "identity"
       },
-      body: req.body
+      body: req.body // texte brut flux
     });
 
     const csv = await influxResponse.text();
     res.set("Access-Control-Allow-Origin", "*");
     res.set("Content-Type", "text/plain");
     res.send(csv);
-
   } catch (err) {
     console.error(err);
     res.status(500).send("Erreur proxy");
   }
 });
-
-app.get("/", (req, res) => {
-  res.send("NebuleAir Proxy actif 🚀");
-});
-
-app.listen(10000, () => console.log("Proxy running on port 10000"));
 
 // =======================================================
 //        SNAKE – API CLASSEMENT GLOBAL
@@ -57,18 +60,19 @@ function sanitizeMode(mode) {
 }
 
 function addSnakeScore(mode, name, score) {
-  mode = sanitizeMode(mode);
+  const m = sanitizeMode(mode);
   const cleanName = (name || "Anonyme").toString().slice(0, 20);
   const numericScore = Number(score) || 0;
 
-  snakeLeaderboards[mode].push({
+  snakeLeaderboards[m].push({
     name: cleanName,
     score: numericScore,
     date: new Date().toISOString()
   });
 
-  snakeLeaderboards[mode].sort((a, b) => b.score - a.score);
-  snakeLeaderboards[mode] = snakeLeaderboards[mode].slice(0, MAX_ENTRIES);
+  // tri décroissant + top 10
+  snakeLeaderboards[m].sort((a, b) => b.score - a.score);
+  snakeLeaderboards[m] = snakeLeaderboards[m].slice(0, MAX_ENTRIES);
 }
 
 // GET → récupère tous les classements
@@ -85,20 +89,23 @@ app.post("/snake/leaderboard", (req, res) => {
   }
 
   addSnakeScore(mode, name, score);
+
+  const m = sanitizeMode(mode);
   res.json({
     ok: true,
-    mode: sanitizeMode(mode),
-    leaderboard: snakeLeaderboards[sanitizeMode(mode)]
+    mode: m,
+    leaderboard: snakeLeaderboards[m]
   });
 });
 
-// Route racine
+// =======================================================
+//  ROUTE RACINE & LANCEMENT
+// =======================================================
 app.get("/", (req, res) => {
-  res.send("NebuleAir Proxy + NebuleSnake Leaderboard 🐍");
+  res.send("NebuleAir Proxy + NebuleSnake Leaderboard 🐍🚀");
 });
 
-// Lancement du serveur
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
 });
-
