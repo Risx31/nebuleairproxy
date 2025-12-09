@@ -65,18 +65,35 @@ function sanitizeMode(mode) {
   if (mode === "lent" || mode === "normal" || mode === "rapide") return mode;
   return "normal";
 }
-
-function addSnakeScore(mode, name, score, durationSec) {
+function addSnakeScore(mode, name, score, durationSec, achievements) {
   const m = sanitizeMode(mode);
   const cleanName = (name || "Anonyme").toString().slice(0, 20);
   const numericScore = Number(score) || 0;
   const dur = Number(durationSec);
 
+  const ach =
+    Array.isArray(achievements) && achievements.length
+      ? achievements.slice(0, 5) // max 5 icônes
+      : [];
+
   snakeLeaderboards[m].push({
     name: cleanName,
     score: numericScore,
+    achievements: ach,
     date: new Date().toISOString()
   });
+
+  // tri décroissant + top10
+  snakeLeaderboards[m].sort((a, b) => b.score - a.score);
+  snakeLeaderboards[m] = snakeLeaderboards[m].slice(0, MAX_ENTRIES);
+
+  // stats globales
+  if (Number.isFinite(dur) && dur > 0) {
+    globalSnakeStats.totalGames += 1;
+    globalSnakeStats.totalPlayTimeSec += Math.floor(dur);
+  }
+}
+
 
   // tri décroissant + top10
   snakeLeaderboards[m].sort((a, b) => b.score - a.score);
@@ -98,13 +115,13 @@ app.get("/snake/leaderboard", (req, res) => {
 
 // POST → ajoute un score { mode, name, score, durationSec }
 app.post("/snake/leaderboard", (req, res) => {
-  const { mode, name, score, durationSec } = req.body || {};
+  const { mode, name, score, durationSec, achievements } = req.body || {};
 
   if (score === undefined) {
     return res.status(400).json({ error: "Missing score" });
   }
 
-  addSnakeScore(mode, name, score, durationSec);
+  addSnakeScore(mode, name, score, durationSec, achievements);
 
   const m = sanitizeMode(mode);
   res.json({
@@ -114,6 +131,7 @@ app.post("/snake/leaderboard", (req, res) => {
     globalStats: globalSnakeStats
   });
 });
+
 
 // =======================================================
 //  ROUTE RACINE & LANCEMENT
