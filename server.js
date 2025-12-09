@@ -8,12 +8,8 @@ const app = express();
 // =======================================================
 //  MIDDLEWARES GLOBAUX
 // =======================================================
-
-// CORS partout
 app.use(cors());
-
-// Parser JSON par défaut (pour le Snake)
-app.use(express.json());
+app.use(express.json()); // pour JSON (Snake)
 
 // =======================================================
 //  INFLUXDB – PROXY /query
@@ -21,10 +17,10 @@ app.use(express.json());
 
 const INFLUX_URL =
   "https://eu-central-1-1.aws.cloud2.influxdata.com/api/v2/query";
-const INFLUX_TOKEN = process.env.INFLUX_TOKEN; // 🔐 stocké côté Render
-const ORG = "4ec803aa73783a39"; // pas utilisé mais tu peux le garder
+const INFLUX_TOKEN = process.env.INFLUX_TOKEN; // 🔐 côté Render
+const ORG = "4ec803aa73783a39"; // gardé si besoin plus tard
 
-// ⚠️ Pour /query on veut le body brut (Flux), donc on ajoute express.text
+// /query : on veut le body Flux brut → express.text au niveau de la route
 app.post("/query", express.text({ type: "*/*" }), async (req, res) => {
   try {
     const influxResponse = await fetch(INFLUX_URL, {
@@ -49,14 +45,20 @@ app.post("/query", express.text({ type: "*/*" }), async (req, res) => {
 });
 
 // =======================================================
-//        SNAKE – API CLASSEMENT GLOBAL
+//        SNAKE – CLASSEMENT GLOBAL + STATS GLOBALES
 // =======================================================
 
 const MAX_ENTRIES = 10;
+
 const snakeLeaderboards = {
   lent: [],
   normal: [],
   rapide: []
+};
+
+const globalSnakeStats = {
+  totalGames: 0,
+  totalPlayTimeSec: 0
 };
 
 function sanitizeMode(mode) {
@@ -64,10 +66,11 @@ function sanitizeMode(mode) {
   return "normal";
 }
 
-function addSnakeScore(mode, name, score) {
+function addSnakeScore(mode, name, score, durationSec) {
   const m = sanitizeMode(mode);
   const cleanName = (name || "Anonyme").toString().slice(0, 20);
   const numericScore = Number(score) || 0;
+  const dur = Number(durationSec);
 
   snakeLeaderboards[m].push({
     name: cleanName,
@@ -75,31 +78,40 @@ function addSnakeScore(mode, name, score) {
     date: new Date().toISOString()
   });
 
-  // tri décroissant + top 10
+  // tri décroissant + top10
   snakeLeaderboards[m].sort((a, b) => b.score - a.score);
   snakeLeaderboards[m] = snakeLeaderboards[m].slice(0, MAX_ENTRIES);
+
+  if (Number.isFinite(dur) && dur > 0) {
+    globalSnakeStats.totalGames += 1;
+    globalSnakeStats.totalPlayTimeSec += Math.floor(dur);
+  }
 }
 
-// GET → récupère tous les classements
+// GET → classements + stats globales
 app.get("/snake/leaderboard", (req, res) => {
-  res.json(snakeLeaderboards);
+  res.json({
+    leaderboards: snakeLeaderboards,
+    globalStats: globalSnakeStats
+  });
 });
 
-// POST → ajoute un score { mode, name, score }
+// POST → ajoute un score { mode, name, score, durationSec }
 app.post("/snake/leaderboard", (req, res) => {
-  const { mode, name, score } = req.body || {};
+  const { mode, name, score, durationSec } = req.body || {};
 
   if (score === undefined) {
     return res.status(400).json({ error: "Missing score" });
   }
 
-  addSnakeScore(mode, name, score);
+  addSnakeScore(mode, name, score, durationSec);
 
   const m = sanitizeMode(mode);
   res.json({
     ok: true,
     mode: m,
-    leaderboard: snakeLeaderboards[m]
+    leaderboard: snakeLeaderboards[m],
+    globalStats: globalSnakeStats
   });
 });
 
